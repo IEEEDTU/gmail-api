@@ -39,7 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'plus.apps.PlusConfig',
-    'social.apps.django_app.default'
+    'social.apps.django_app.default',
+    'googleCalendar.apps.GooglecalendarConfig',
+    'Workspace.apps.WorkspaceConfig'
 ]
 
 '''Extra Added'''

@@ -17,11 +17,6 @@ https://developers.google.com/api-client-library/python/guide/django#storage
 https://www.youtube.com/watch?v=IVjZMIWhz3Y
 '''
 
-'''EXTRA LIBRARY FILES FROM GMAIL'''
-#from __future__ import print_function
-from email.mime.text import MIMEText
-from apiclient import errors
-
 '''NECESSARY LIB FILES'''
 import os
 import logging
@@ -30,11 +25,11 @@ import httplib2
 from googleapiclient.discovery import build
 from django.contrib.auth.decorators import login_required
 from django.core.urlresolvers import reverse
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
-from plus.models import *
+from Workspace.models import *
 from test_django_original_try import settings
 from oauth2client.contrib import xsrfutil
 from oauth2client.client import flow_from_clientsecrets
@@ -44,11 +39,11 @@ from oauth2client.contrib.django_orm import Storage
 # application, including client_id and client_secret, which are found
 # on the API Access tab on the Google APIs
 # Console <http://code.google.com/apis/console>
-CLIENT_SECRETS = os.path.join(os.path.dirname(__file__), '..', 'gmail_client_secrets.json')
+CLIENT_SECRETS = os.path.join(os.path.dirname(__file__), '..', 'drive_client_secrets.json')
 
 FLOW = flow_from_clientsecrets(
     CLIENT_SECRETS,
-    scope='https://mail.google.com/',
+    scope='https://www.googleapis.com/auth/drive',
     redirect_uri='http://localhost:8080/oauth2callback')
 
 
@@ -57,7 +52,7 @@ def index(request):
 
   '''I Have created a static user as I dont have any logged in user in my app right now'''
   U = User(
-      username = 'example2',
+      username = 'example',
       firstname= 'Bla Bla',
       lastname= 'Bla Bla',
       email = 'example@gmail.com'
@@ -76,47 +71,19 @@ def index(request):
   else:
     http = httplib2.Http()
     http = credential.authorize(http)
-    service = build("gmail", "v1", http=http)
+    service = build('drive', 'v3', http=http)
 
-    '''results = service.users().labels().list(userId='me').execute()
-    labels = results.get('labels', [])'''
-
-    #GMAIL CHECK
-    '''if not labels:
-        print('No labels found.')
-    else:
-      print('Labels:')
-      for label in labels:
-        print(label['name'])
-    ''''activities = service.activities()'''
-
-    #GOOGLE PLUS CHECK
-    '''activitylist = activities.list(collection='public',
-                                   userId='me').execute()
-    logging.info(activitylist)'''
-
-    '''return render(request, 'plus/welcome.html', {
-                'activitylist': activitylist,
-                })'''
-    #print("1")
-    #message_text = request.GET.get("message_text","i am default")
-    message_text = request.GET['message_text']
-    sender = ""
-    to = request.GET['to']
-    subject = request.GET['subject']
-    #print("2")
-    #print(request.POST['message_text']+" "+request.POST.get['message_text'])
-    message = CreateMessage(sender, to, subject, message_text,service)
-    message = SendMessage(service,"me",message)
-    print(message)
+    #GOOGLE DRIVE FUNCTION CALLS
+    id = getFolderID(service)
+    #id1 = creatingFolderInsideAFolder(service, id)
     print("Successful")
-    return HttpResponse("Mail Sent Successfully <script type='text/javascript'> function Redirect() {  window.location.href='http://localhost/OnCourse/student/communique/mailbox.html'; } document.write('You will be redirected to a new page in 5 seconds'); setTimeout('Redirect()', 5000);  </script> ")
+    return id
 
 
 def auth_return(request):
   '''The Token generated in index() should be validated here with the same user that was used to generate the token'''
   U = User(
-      username = 'example2',
+      username = 'example',
       firstname= 'Bla Bla',
       lastname= 'Bla Bla',
       email = 'example@gmail.com'
@@ -139,47 +106,51 @@ def auth_return(request):
 
 
 
-'''Functions For GMAIL'''
+'''Functions For Drive'''
 
 
-def CreateMessage(sender, to, subject, message_text, service):
-  """Create a message for an email.
 
-  Args:
-    sender: Email address of the sender.
-    to: Email address of the receiver.
-    subject: The subject of the email message.
-    message_text: The text of the email message.
-
-  Returns:
-    An object containing a base64 encoded email object.
-  """
-  message = MIMEText(message_text)
-  message['to'] = to
-  message['from'] = sender
-  message['subject'] = subject
-  x = base64.b64encode(message.as_bytes())
-  x = x.decode()
-  body = {'raw':x}
-  return body
+def creatingNewFolder(service):
+    file_metadata = {
+        'name': 'Test Folder Drive',
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    file = service.files().create(body=file_metadata,
+                                  fields='id').execute()
+    print('Folder ID: %s' % file.get('id'))
+    return file.get('id')
 
 
-def SendMessage(service, user_id, message):
-  """Send an email message.
+def creatingFolderInsideAFolder(service, id):
+    # folder_id = id
+    file_metadata = {
+        'name': 'Folder inside a folder Test',
+        'parents': [id],
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    root_folder = service.files().create(body=file_metadata).execute()
+    print('Folder Inside Folder ID: %s' % root_folder['id'])
+    return root_folder['id']
 
-  Args:
-    service: Authorized Gmail API service instance.
-    user_id: User's email address. The special value "me"
-    can be used to indicate the authenticated user.
-    message: Message to be sent.
 
-  Returns:
-    Sent Message.
-  """
-  try:
-    message = (service.users().messages().send(userId=user_id, body=message)
-               .execute())
-    print('Message Id: %s' % message['id'])
-    return message
-  except errors.HttpError as error:
-    print('An error occurred: %s' % error)
+# This function checks if any particular folder exists
+# If it exists it just returns its id otherwise that folder is created and id is returned
+def getFolderID(service):
+    page_token = None
+    while True:
+        response = service.files().list(q="mimeType='application/vnd.google-apps.folder'",
+                                              spaces='drive',
+                                              fields='nextPageToken, files(id, name)',
+                                              pageToken=page_token).execute()
+        for file in response.get('files', []):
+            # Process change
+            #print('Found file: %s (%s)' % (file.get('name'), file.get('id')))
+            if file.get('name')=='Test Folder Drive':
+                return file.get('id')
+        page_token = response.get('nextPageToken', None)
+        if page_token is None:
+            id = creatingNewFolder(service)
+            return id
+
+
+

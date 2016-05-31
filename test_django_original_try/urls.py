@@ -6,8 +6,9 @@ urlpatterns = [
     url(r'', include('social.apps.django_app.urls', namespace='social')),
     url('', include('django.contrib.auth.urls', namespace='auth')),
     url(r'^admin/', admin.site.urls),
-    url(r'^$','plus.views.index'),
-    url(r'^oauth2callback', 'plus.views.auth_return')
+    url(r'^plus/', include('plus.urls')),
+    url(r'^googleCalendar/', include('googleCalendar.urls')),
+    url(r'^Workspace/', include('Workspace.urls')),
 ]
 
 ''''

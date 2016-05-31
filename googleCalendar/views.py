@@ -17,10 +17,8 @@ https://developers.google.com/api-client-library/python/guide/django#storage
 https://www.youtube.com/watch?v=IVjZMIWhz3Y
 '''
 
-'''EXTRA LIBRARY FILES FROM GMAIL'''
-#from __future__ import print_function
-from email.mime.text import MIMEText
-from apiclient import errors
+'''For Calendar'''
+import datetime
 
 '''NECESSARY LIB FILES'''
 import os
@@ -30,11 +28,11 @@ import httplib2
 from googleapiclient.discovery import build
 from django.contrib.auth.decorators import login_required
 from django.core.urlresolvers import reverse
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
-from plus.models import *
+from googleCalendar.models import *
 from test_django_original_try import settings
 from oauth2client.contrib import xsrfutil
 from oauth2client.client import flow_from_clientsecrets
@@ -44,11 +42,11 @@ from oauth2client.contrib.django_orm import Storage
 # application, including client_id and client_secret, which are found
 # on the API Access tab on the Google APIs
 # Console <http://code.google.com/apis/console>
-CLIENT_SECRETS = os.path.join(os.path.dirname(__file__), '..', 'gmail_client_secrets.json')
+CLIENT_SECRETS = os.path.join(os.path.dirname(__file__), '..', 'calendar_client_secrets.json')
 
 FLOW = flow_from_clientsecrets(
     CLIENT_SECRETS,
-    scope='https://mail.google.com/',
+    scope='https://www.googleapis.com/auth/calendar',
     redirect_uri='http://localhost:8080/oauth2callback')
 
 
@@ -57,7 +55,7 @@ def index(request):
 
   '''I Have created a static user as I dont have any logged in user in my app right now'''
   U = User(
-      username = 'example2',
+      username = 'example',
       firstname= 'Bla Bla',
       lastname= 'Bla Bla',
       email = 'example@gmail.com'
@@ -76,47 +74,46 @@ def index(request):
   else:
     http = httplib2.Http()
     http = credential.authorize(http)
-    service = build("gmail", "v1", http=http)
+    service = build('calendar', 'v3', http=http)
+    listEvents(service)
 
-    '''results = service.users().labels().list(userId='me').execute()
-    labels = results.get('labels', [])'''
+    '''Just For Testing'''
+    event = {
+      'summary': 'Google I/O 2015',
+      'location': '800 Howard St., San Francisco, CA 94103',
+      'description': 'A chance to hear more about Google\'s developer products.',
+      'start': {
+        'dateTime': '2016-04-07T09:00:00-07:00',
+        'timeZone': 'America/Los_Angeles',
+      },
+      'end': {
+        'dateTime': '2016-04-08T17:00:00-07:00',
+        'timeZone': 'America/Los_Angeles',
+      },
+      'recurrence': [
+        'RRULE:FREQ=DAILY'
+      ],
+      'attendees': [
+        {'email': 'vaibhavsawhney1511@gmail.com'}
+      ],
+      'reminders': {
+        'useDefault': False,
+        'overrides': [
+          {'method': 'email', 'minutes': 24 * 60},
+          {'method': 'popup', 'minutes': 10},
+        ],
+      },
+    }
 
-    #GMAIL CHECK
-    '''if not labels:
-        print('No labels found.')
-    else:
-      print('Labels:')
-      for label in labels:
-        print(label['name'])
-    ''''activities = service.activities()'''
-
-    #GOOGLE PLUS CHECK
-    '''activitylist = activities.list(collection='public',
-                                   userId='me').execute()
-    logging.info(activitylist)'''
-
-    '''return render(request, 'plus/welcome.html', {
-                'activitylist': activitylist,
-                })'''
-    #print("1")
-    #message_text = request.GET.get("message_text","i am default")
-    message_text = request.GET['message_text']
-    sender = ""
-    to = request.GET['to']
-    subject = request.GET['subject']
-    #print("2")
-    #print(request.POST['message_text']+" "+request.POST.get['message_text'])
-    message = CreateMessage(sender, to, subject, message_text,service)
-    message = SendMessage(service,"me",message)
-    print(message)
+    link = addEvent(service,event)
     print("Successful")
-    return HttpResponse("Mail Sent Successfully <script type='text/javascript'> function Redirect() {  window.location.href='http://localhost/OnCourse/student/communique/mailbox.html'; } document.write('You will be redirected to a new page in 5 seconds'); setTimeout('Redirect()', 5000);  </script> ")
+    return HttpResponse(link)
 
 
 def auth_return(request):
   '''The Token generated in index() should be validated here with the same user that was used to generate the token'''
   U = User(
-      username = 'example2',
+      username = 'example',
       firstname= 'Bla Bla',
       lastname= 'Bla Bla',
       email = 'example@gmail.com'
@@ -138,48 +135,23 @@ def auth_return(request):
   return HttpResponseRedirect("/")
 
 
+def listEvents(service):
+    now = datetime.datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
+    print('Getting the upcoming 10 events')
+    eventsResult = service.events().list(
+        calendarId='primary', timeMin=now, maxResults=15, singleEvents=True,
+        orderBy='startTime').execute()
+    events = eventsResult.get('items', [])
 
-'''Functions For GMAIL'''
-
-
-def CreateMessage(sender, to, subject, message_text, service):
-  """Create a message for an email.
-
-  Args:
-    sender: Email address of the sender.
-    to: Email address of the receiver.
-    subject: The subject of the email message.
-    message_text: The text of the email message.
-
-  Returns:
-    An object containing a base64 encoded email object.
-  """
-  message = MIMEText(message_text)
-  message['to'] = to
-  message['from'] = sender
-  message['subject'] = subject
-  x = base64.b64encode(message.as_bytes())
-  x = x.decode()
-  body = {'raw':x}
-  return body
+    if not events:
+        print('No upcoming events found.')
+    for event in events:
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        print(start, event['summary'])
 
 
-def SendMessage(service, user_id, message):
-  """Send an email message.
-
-  Args:
-    service: Authorized Gmail API service instance.
-    user_id: User's email address. The special value "me"
-    can be used to indicate the authenticated user.
-    message: Message to be sent.
-
-  Returns:
-    Sent Message.
-  """
-  try:
-    message = (service.users().messages().send(userId=user_id, body=message)
-               .execute())
-    print('Message Id: %s' % message['id'])
-    return message
-  except errors.HttpError as error:
-    print('An error occurred: %s' % error)
+def addEvent(service,event):
+    event = service.events().insert(calendarId='primary', body=event).execute()
+    link = event.get('htmlLink')
+    print('Event created: %s' % link)
+    return link
